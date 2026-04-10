@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 
 type BingoCard = {
   id: string;
-  cells: (number | null)[][]; // 5x5 grid, null = free space
+  cells: (number | null)[][];
   selected: boolean[][];
 };
 
@@ -22,23 +22,33 @@ type EventData = {
   event_code: string;
   name: string | null;
   status: string;
+  venue_name: string | null;
   games: GameData[];
 };
+
+type PlayerState = {
+  v: 1;
+  eventCode: string;
+  cardsByGame: Record<string, BingoCard[]>;
+  savedAt: number;
+};
+
+const CARDS_PER_GAME = 3;
+const BINGO = ["B", "I", "N", "G", "O"];
 
 function generateCard(): BingoCard {
   const columns: number[][] = [];
   const ranges = [
-    [1, 15], // B
-    [16, 30], // I
-    [31, 45], // N
-    [46, 60], // G
-    [61, 75], // O
+    [1, 15],
+    [16, 30],
+    [31, 45],
+    [46, 60],
+    [61, 75],
   ];
 
   for (const [min, max] of ranges) {
     const pool: number[] = [];
     for (let n = min; n <= max; n++) pool.push(n);
-    // Shuffle
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -54,8 +64,8 @@ function generateCard(): BingoCard {
     const selRow: boolean[] = [];
     for (let col = 0; col < 5; col++) {
       if (row === 2 && col === 2) {
-        cellRow.push(null); // free space
-        selRow.push(true); // auto-selected
+        cellRow.push(null);
+        selRow.push(true);
       } else {
         cellRow.push(columns[col][row]);
         selRow.push(false);
@@ -66,13 +76,19 @@ function generateCard(): BingoCard {
   }
 
   return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
     cells,
     selected,
   };
 }
 
-const BINGO = ["B", "I", "N", "G", "O"];
+function generateCardsForGame(): BingoCard[] {
+  return Array.from({ length: CARDS_PER_GAME }, () => generateCard());
+}
+
+function storageKey(eventCode: string) {
+  return `trad-bingo:state:v1:${eventCode}`;
+}
 
 export default function EventPage() {
   const params = useParams<{ eventId?: string }>();
@@ -81,8 +97,10 @@ export default function EventPage() {
   const [loading, setLoading] = useState(true);
   const [event, setEvent] = useState<EventData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [card, setCard] = useState<BingoCard | null>(null);
   const [activeGameIndex, setActiveGameIndex] = useState(0);
+  const [cardsByGame, setCardsByGame] = useState<Record<string, BingoCard[]>>(
+    {},
+  );
 
   // Fetch event data
   useEffect(() => {
@@ -109,39 +127,79 @@ export default function EventPage() {
     load();
   }, [eventCode]);
 
-  // Generate card once event loads
+  // Load or generate cards
   useEffect(() => {
     if (!event) return;
 
-    const storageKey = `trad-bingo:card:${eventCode}`;
-    const saved = localStorage.getItem(storageKey);
+    const key = storageKey(eventCode);
+    const raw = localStorage.getItem(key);
+    let restored: Record<string, BingoCard[]> = {};
 
-    if (saved) {
+    if (raw) {
       try {
-        setCard(JSON.parse(saved));
-        return;
+        const parsed: PlayerState = JSON.parse(raw);
+        if (parsed.v === 1 && parsed.eventCode === eventCode) {
+          restored = parsed.cardsByGame;
+        }
       } catch {
         /* regenerate */
       }
     }
 
-    const newCard = generateCard();
-    setCard(newCard);
-    localStorage.setItem(storageKey, JSON.stringify(newCard));
+    const updated = { ...restored };
+    let changed = false;
+
+    for (const game of event.games) {
+      if (!updated[game.id] || updated[game.id].length !== CARDS_PER_GAME) {
+        updated[game.id] = generateCardsForGame();
+        changed = true;
+      }
+    }
+
+    setCardsByGame(updated);
+
+    if (changed) {
+      const state: PlayerState = {
+        v: 1,
+        eventCode,
+        cardsByGame: updated,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(key, JSON.stringify(state));
+    }
   }, [event, eventCode]);
 
-  const toggleCell = (row: number, col: number) => {
-    if (row === 2 && col === 2) return; // free space
+  // Save on changes
+  const saveState = (next: Record<string, BingoCard[]>) => {
+    setCardsByGame(next);
+    const state: PlayerState = {
+      v: 1,
+      eventCode,
+      cardsByGame: next,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(storageKey(eventCode), JSON.stringify(state));
+  };
+
+  const toggleCell = (
+    gameId: string,
+    cardIndex: number,
+    row: number,
+    col: number,
+  ) => {
+    if (row === 2 && col === 2) return;
+
+    const next = { ...cardsByGame };
+    const cards = [...(next[gameId] || [])];
+    const card = cards[cardIndex];
     if (!card) return;
 
     const newSelected = card.selected.map((r) => [...r]);
     newSelected[row][col] = !newSelected[row][col];
-    const updated = { ...card, selected: newSelected };
-    setCard(updated);
-    localStorage.setItem(
-      `trad-bingo:card:${eventCode}`,
-      JSON.stringify(updated),
-    );
+    cards[cardIndex] = { ...card, selected: newSelected };
+    next[gameId] = cards;
+
+    saveState(next);
   };
 
   if (loading) {
@@ -164,16 +222,21 @@ export default function EventPage() {
   }
 
   const currentGame = event.games[activeGameIndex] ?? null;
+  const currentCards = currentGame ? (cardsByGame[currentGame.id] ?? []) : [];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#000A3B] to-[#001370] text-slate-100 flex flex-col items-center">
       <main className="w-full max-w-md px-4 py-6">
         <header className="mb-4 text-center">
-          <h1 className="text-2xl font-bold">{event.name ?? "Bingo"}</h1>
+          <h1 className="text-2xl font-bold">
+            {event.venue_name
+              ? `${event.venue_name} Bingo`
+              : (event.name ?? "Bingo")}
+          </h1>
           {currentGame && (
             <p className="text-sm text-slate-300 mt-1">
               Game {currentGame.game_number} —{" "}
-              {currentGame.pattern.replace("_", " ")}
+              {currentGame.pattern.replace(/_/g, " ")}
             </p>
           )}
         </header>
@@ -196,48 +259,60 @@ export default function EventPage() {
           </div>
         )}
 
-        {card && (
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-            {/* BINGO header */}
-            <div className="grid grid-cols-5 gap-1 mb-1">
-              {BINGO.map((letter) => (
-                <div
-                  key={letter}
-                  className="text-center text-lg font-bold text-emerald-400 py-1"
-                >
-                  {letter}
-                </div>
-              ))}
-            </div>
+        {/* Three stacked cards */}
+        <div className="space-y-6">
+          {currentCards.map((card, cardIndex) => (
+            <div
+              key={card.id}
+              className="bg-white/5 border border-white/10 rounded-xl p-3"
+            >
+              <div className="text-center text-xs font-semibold text-slate-400 mb-2">
+                Card {cardIndex + 1}
+              </div>
 
-            {/* Card grid */}
-            <div className="grid grid-cols-5 gap-1">
-              {card.cells.map((row, rIdx) =>
-                row.map((cell, cIdx) => {
-                  const isFree = rIdx === 2 && cIdx === 2;
-                  const isSelected = card.selected[rIdx][cIdx];
+              {/* BINGO header */}
+              <div className="grid grid-cols-5 gap-1 mb-1">
+                {BINGO.map((letter) => (
+                  <div
+                    key={letter}
+                    className="text-center text-lg font-bold text-emerald-400 py-1"
+                  >
+                    {letter}
+                  </div>
+                ))}
+              </div>
 
-                  return (
-                    <button
-                      key={`${rIdx}-${cIdx}`}
-                      onClick={() => toggleCell(rIdx, cIdx)}
-                      disabled={isFree}
-                      className={`aspect-square flex items-center justify-center rounded-md text-lg font-semibold border transition ${
-                        isFree
-                          ? "bg-blue-700/60 border-blue-600 text-blue-100 cursor-default"
-                          : isSelected
-                            ? "bg-emerald-400/90 text-black border-emerald-200 shadow-lg shadow-emerald-500/30"
-                            : "bg-white/10 text-slate-100 border-white/20 hover:bg-white/15"
-                      }`}
-                    >
-                      {isFree ? "FREE" : cell}
-                    </button>
-                  );
-                }),
-              )}
+              {/* Card grid */}
+              <div className="grid grid-cols-5 gap-1">
+                {card.cells.map((row, rIdx) =>
+                  row.map((cell, cIdx) => {
+                    const isFree = rIdx === 2 && cIdx === 2;
+                    const isSelected = card.selected[rIdx][cIdx];
+
+                    return (
+                      <button
+                        key={`${rIdx}-${cIdx}`}
+                        onClick={() =>
+                          toggleCell(currentGame!.id, cardIndex, rIdx, cIdx)
+                        }
+                        disabled={isFree}
+                        className={`aspect-square flex items-center justify-center rounded-md text-lg font-semibold border transition ${
+                          isFree
+                            ? "bg-blue-700/60 border-blue-600 text-blue-100 cursor-default"
+                            : isSelected
+                              ? "bg-emerald-400/90 text-black border-emerald-200 shadow-lg shadow-emerald-500/30"
+                              : "bg-white/10 text-slate-100 border-white/20 hover:bg-white/15"
+                        }`}
+                      >
+                        {isFree ? "FREE" : cell}
+                      </button>
+                    );
+                  }),
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          ))}
+        </div>
       </main>
     </div>
   );

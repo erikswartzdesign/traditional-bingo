@@ -24,6 +24,18 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Fetch venue name
+  let venueName: string | null = null;
+  if (event.venue_id) {
+    const { data: venue } = await supabase
+      .from("venues")
+      .select("name")
+      .eq("id", event.venue_id)
+      .single();
+
+    if (venue) venueName = venue.name;
+  }
+
   const { data: games, error: gamesErr } = await supabase
     .from("games")
     .select("id, game_number, pattern, status, called_numbers")
@@ -39,6 +51,6 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    event: { ...event, games: games ?? [] },
+    event: { ...event, venue_name: venueName, games: games ?? [] },
   });
 }
