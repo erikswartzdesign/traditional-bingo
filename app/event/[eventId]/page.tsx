@@ -228,6 +228,11 @@ export default function EventPage() {
     <div className="min-h-screen bg-gradient-to-b from-[#000A3B] to-[#001370] text-slate-100 flex flex-col items-center">
       <main className="w-full max-w-md px-4 py-6">
         <header className="mb-4 text-center">
+          <img
+            src="/Elation-Ent-V1.png"
+            alt="Logo"
+            className="mx-auto mb-3 h-30"
+          />
           <h1 className="text-2xl font-bold">
             {event.venue_name
               ? `${event.venue_name} Bingo`
