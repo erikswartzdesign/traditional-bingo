@@ -260,7 +260,7 @@ export default function EventPage() {
         )}
 
         {/* Three stacked cards */}
-        <div className="space-y-6">
+        <div className="space-y-7">
           {currentCards.map((card, cardIndex) => (
             <div
               key={card.id}
