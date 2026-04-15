@@ -330,13 +330,13 @@ export default function EventPage() {
           <img
             src="/Elation-Ent-V1.png"
             alt="Logo"
-            className="mx-auto mb-3 h-30"
+            className="mx-auto mb-6 h-35"
           />
         </header>
 
         {/* Game tabs */}
         {event.games.length > 1 && (
-          <div className="flex justify-center gap-2 mb-2 flex-wrap">
+          <div className="flex justify-center gap-3 mb-6 flex-wrap">
             {event.games.map((g, i) => (
               <button
                 key={g.id}
@@ -354,17 +354,17 @@ export default function EventPage() {
         )}
 
         {/* Reset button */}
-        <div className="flex justify-center mb-4">
+        <div className="flex justify-center mb-6">
           <button
             onClick={resetCards}
-            className="px-10 py-1 rounded-full text-sm font-medium border bg-red-600/80 text-white border-red-500 hover:bg-red-500 transition"
+            className="px-20 py-1 rounded-full text-sm font-medium border bg-red-600/80 text-white border-red-500 hover:bg-red-500 transition"
           >
             Reset Cards
           </button>
         </div>
 
         {/* Three stacked cards with social links between them */}
-        <div className="space-y-7">
+        <div className="space-y-0">
           {currentCards.map((card, cardIndex) => (
             <div key={card.id}>
               <div className="bg-white/5 border border-white/10 rounded-xl p-3">
